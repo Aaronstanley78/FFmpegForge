@@ -64,8 +64,8 @@ namespace FFmpegForge
 
         static string CacheKey()
         {
-            try { var fi = new FileInfo(Runner.FFmpeg); return "v3|" + fi.FullName + "|" + fi.Length + "|" + fi.LastWriteTimeUtc.Ticks; }
-            catch { return "v3|?"; }
+            try { var fi = new FileInfo(Runner.FFmpeg); return "v4|" + fi.FullName + "|" + fi.Length + "|" + fi.LastWriteTimeUtc.Ticks; }
+            catch { return "v4|?"; }
         }
 
         public static void Load()
@@ -109,7 +109,7 @@ namespace FFmpegForge
                     foreach (var raw in Run("-hide_banner -muxers").Split('\n'))
                     {
                         string l = raw.TrimEnd('\r');
-                        if (l.Trim() == "--") { started = true; continue; }
+                        if (l.Trim().Length >= 2 && l.Trim().Trim('-').Length == 0) { started = true; continue; }   // "--" (old) or "---" (FFmpeg 9)
                         if (!started) continue;
                         var m = MuxLine.Match(l);
                         if (m.Success) names.Add(new[] { m.Groups[1].Value, m.Groups[2].Value.Trim() });
@@ -133,7 +133,7 @@ namespace FFmpegForge
                         bag.Add(mi);
                     });
                     mux = bag.OrderBy(m => m.Name).ToList();
-                    try
+                    if (mux.Count > 0) try
                     {
                         Directory.CreateDirectory(Path.GetDirectoryName(CachePath));
                         var outl = new List<string> { key };

@@ -1,4 +1,4 @@
-FFmpeg FORGE — Universal Video • Audio • Image converter
+﻿FFmpeg FORGE — Universal Video • Audio • Image converter
 =========================================================
 
 RUN: double-click C:\FFmpeg\FFmpegForge.exe
@@ -21,6 +21,60 @@ FORMATS & CODECS
    Avid DNxHR: LB, SQ, HQ, HQX (10-bit), 444 (10-bit).
  - Formats with strict rules (DV, GXF, MXF D-10, H.261, AMV, GSM, AMR…) are fixed
    automatically (size, frame rate, sample rate, channels).
+
+IMMERSIVE AUDIO (Audio settings > Channels)
+ - Layouts: mono ... 7.1, 5.1.2, 5.1.4, 7.1.2, 7.1.4 (Dolby Atmos / DTS:X beds),
+   7.1.6 and 9.1.6 (Dolby Atmos beds), 9.1.4 (DTS:X Pro), 22.2.
+ - IMMERSIVE UPMIX (automatic when the source has fewer channels):
+   lead vocal / dialogue steered to the center speaker (closer to you),
+   instruments keep their stereo position (front, wides, sides), bass and
+   kick to the LFE, reverb / room / cymbals / air to the wides and heights
+   (the voice never goes up). Styles: Auto, Music, Cinema, Live concert, Off.
+ - The codec switches automatically (PCM 24-bit / Opus) when the format's
+   default codec cannot carry the channels (MKV, MOV, WAV, W64, CAF, MKA...).
+ - Written as discrete channel beds. Above 8 channels use PCM 24-bit
+   (WAV / W64 / CAF / MOV / MKV), Opus, Vorbis, WavPack or TTA.
+ - FFmpeg cannot encode Dolby Atmos objects or DTS:X metadata. To KEEP an
+   existing Atmos (TrueHD / E-AC-3 JOC) or DTS:X track, choose
+   "Passthrough" (bit-for-bit copy, MKV recommended).
+
+SCALE / ECHELLE (video & image output)
+ - Tick "Scale" and pick a type: FSR 1 (AMD), NIS (NVIDIA), SGSR (Qualcomm),
+   Anime4K, xBR, hqx, Integer, Nearest neighbor, Sharp bilinear, BCAS,
+   EWA Lanczos Sharp, Lanczos, Bicubic, Spline.
+ - Factor x1.5 ... x4, or "Use the Resolution setting".
+ - Sharpness 100 % by default (FSR, NIS, SGSR, BCAS). "Optimized" (ticked by
+   default) = GPU processing (FFmpeg libplacebo / Vulkan), high precision.
+ - "Screen quality encode" (ticked by default): H.265 / AV1 / VP9 in 10-bit,
+   CRF 4 steps finer, edge-preserving encoder tuning, final pixel conversion
+   done by libplacebo. "Full chroma 4:4:4" (ticked by default) keeps full
+   colour resolution like the screen for H.265 / VP9 (VLC, mpv and PCs play it; some TVs and
+   phones cannot - untick it for those).
+ - FSR 1 follows AMD's defaults (RCAS denoise off), like Lossless Scaling.
+ - FSR / NIS / SGSR / Anime4K / EWA need a "full" FFmpeg build (libplacebo).
+ - Open-source algorithms only (licenses: SHADER_LICENSES.txt). Lossless
+   Scaling's own "LS1" is proprietary and is not included.
+
+NVIDIA RTX AI (video output, RTX GPU)
+ - Tick what you want: RTX Video Super Resolution (quality 1-4, x2/x3/x4),
+   RTX TrueHDR (SDR -> HDR10: contrast, saturation, middle gray, peak nits),
+   DLSS Super Resolution (NVIDIA NGX AI: DLAA, Quality, Balanced, Performance,
+   Ultra Performance).
+ - Built-in engine (default): "NVIDIA driver" = ForgeRTX.exe next to
+   FFmpegForge.exe. Uses the RTX Video feature of your NVIDIA driver (like
+   Chrome / VLC). Turn ON "RTX Video Enhancement > Super Resolution" (and
+   "HDR" for TrueHDR) in the NVIDIA App / Control Panel; the VSR quality
+   level is chosen there.
+ - Engine 1: an FFmpeg build that includes NVIDIA's RTX Video filters
+   (vsr_cuda, truehdr_cuda, isr_cuda, dlpp_drv_cuda). "All ... parameters"
+   then opens every real option of the filter.
+ - Engine 2: RTXVideoProcessor.exe (github.com/DrC0ns0le/RTXVideoProcessor,
+   NVIDIA RTX Video SDK) for VSR x2 + TrueHDR. Put it in C:\FFmpeg\bin or use
+   "Locate RTXVideoProcessor.exe".
+ - DLSS is a game technology (needs game motion vectors): it only runs with
+   an FFmpeg build that has NVIDIA's NGX filters. Otherwise it is skipped and
+   RTX Video Super Resolution is used.
+ - TrueHDR needs a 10-bit codec (H.265, AV1, VP9, ProRes...).
 
 RESOLUTION (no limit)
  - Pick a preset (8K, DCI 4K, 4K, 1080p, vertical 9:16, square…) or type any

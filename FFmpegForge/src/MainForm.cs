@@ -31,9 +31,26 @@ namespace FFmpegForge
         ResPicker resVideo, resImage;
         NumericUpDown nuVBitrate, nuStill;
         CheckBox chkSubs;
+        // Scale (Échelle)
+        TableLayoutPanel secScale;
+        CheckBox chkScale, chkScaleOpt, chkScaleFid, chkScale444;
+        ComboBox cbScaleType, cbScaleFactor;
+        TrackBar tbScaleSharp;
+        Label lblScaleSharpVal, lblScaleInfo;
+        readonly List<Control> scaleRows = new List<Control>();
+        // NVIDIA RTX AI
+        TableLayoutPanel secRtx;
+        CheckBox chkVsr, chkHdr, chkDlss;
+        ComboBox cbVsrQ, cbVsrScale, cbDlssMode, cbRtxEngine;
+        NumericUpDown nuHdrContrast, nuHdrSat, nuHdrGray, nuHdrLum;
+        Label lblRtxStatus;
+        FlatBtn btnVsrParams, btnHdrParams, btnDlssParams;
+        string vsrExpr, hdrExpr, dlssExpr;
+        readonly List<Control> vsrRows = new List<Control>(), hdrRows = new List<Control>(), dlssRows = new List<Control>();
         Label lblACodec;
         // audio
-        ComboBox cbAKbps, cbRate, cbCh;
+        ComboBox cbAKbps, cbRate, cbCh, cbUpmix;
+        Label lblUpmix;
         NumericUpDown nuVolume;
         CheckBox chkNorm;
         // image
@@ -196,19 +213,122 @@ namespace FFmpegForge
             AddRow(secVideo, null, chkSubs);
             stack.Controls.Add(secVideo);
 
+            // Scale (Échelle)
+            secScale = Section("SCALE  (ÉCHELLE)");
+            chkScale = Check("Scale — upscale with a game-style upscaler");
+            AddRow(secScale, null, chkScale);
+            cbScaleType = Combo(Scaling.Types.Cast<object>().ToArray());
+            cbScaleType.DropDownWidth = Theme.S(380);
+            cbScaleFactor = Combo("×1.5", "×2", "×2.5", "×3", "×4", "Use the Resolution setting");
+            cbScaleFactor.SelectedIndex = 1;
+            tbScaleSharp = new TrackBar { Minimum = 0, Maximum = 100, Value = 100, TickStyle = TickStyle.None, BackColor = Theme.Panel, Dock = DockStyle.Fill, AutoSize = false, Height = Theme.S(28) };
+            lblScaleSharpVal = new Label { Text = "100 %", AutoSize = false, Width = Theme.S(48), ForeColor = Theme.Text, TextAlign = ContentAlignment.MiddleRight, Dock = DockStyle.Right };
+            tbScaleSharp.ValueChanged += (s2, e2) => lblScaleSharpVal.Text = tbScaleSharp.Value + " %";
+            var shHost = new Panel { Height = Theme.S(30), Dock = DockStyle.Fill, Margin = new Padding(0, Theme.S(3), 0, Theme.S(3)) };
+            shHost.Controls.Add(tbScaleSharp); shHost.Controls.Add(lblScaleSharpVal);
+            chkScaleOpt = Check("Optimized (GPU, high precision)");
+            chkScaleOpt.Checked = true;
+            chkScaleFid = Check("Screen quality encode (10-bit, finer CRF)");
+            chkScaleFid.Checked = true;
+            chkScale444 = Check("Full chroma 4:4:4 (same colour detail as the screen)");
+            chkScale444.Checked = true;
+            lblScaleInfo = new Label { Text = "", ForeColor = Theme.Muted, Font = fSmall, AutoSize = true, MaximumSize = new Size(Theme.S(400), 0), Margin = new Padding(0, Theme.S(4), 0, 0) };
+            scaleRows.Add(AddRow(secScale, "   Type", cbScaleType)); scaleRows.Add(cbScaleType);
+            scaleRows.Add(AddRow(secScale, "   Factor", cbScaleFactor)); scaleRows.Add(cbScaleFactor);
+            scaleRows.Add(AddRow(secScale, "   Sharpness", shHost)); scaleRows.Add(shHost);
+            AddRow(secScale, null, chkScaleOpt); scaleRows.Add(chkScaleOpt);
+            AddRow(secScale, null, chkScaleFid); scaleRows.Add(chkScaleFid);
+            AddRow(secScale, null, chkScale444); scaleRows.Add(chkScale444);
+            tips.SetToolTip(chkScaleFid, "Keeps what the upscaler adds: H.265 / AV1 / VP9 in 10-bit, CRF 4 steps finer,\nedge-preserving encoder tuning, and the final pixel conversion done by libplacebo.\nThis is what brings the file closest to a live Lossless Scaling picture.");
+            tips.SetToolTip(chkScale444, "4:4:4 keeps full colour resolution (like the screen) for H.265 and VP9. Larger files;\nsome TVs and phones cannot play 4:4:4 — VLC, mpv and PCs can.");
+            AddRow(secScale, null, lblScaleInfo); scaleRows.Add(lblScaleInfo);
+            tips.SetToolTip(chkScaleOpt, "Optimized: GPU processing through FFmpeg's libplacebo (Vulkan) with blue-noise dithering —\nfaster and more precise. FSR, NIS, SGSR, Anime4K and EWA always run on the GPU.");
+            tips.SetToolTip(cbScaleType, "FSR 1 (AMD), NIS (NVIDIA) and SGSR (Qualcomm) are open-source game upscalers ported to GLSL;\nAnime4K is made for anime. xBR / hqx / Integer / Nearest suit pixel art.");
+            chkScale.CheckedChanged += (s2, e2) => UpdateScaleRows();
+            cbScaleType.SelectedIndexChanged += (s2, e2) => UpdateScaleRows();
+            chkScaleOpt.CheckedChanged += (s2, e2) => UpdateScaleRows();
+            UpdateScaleRows();
+            stack.Controls.Add(secScale);
+
+            // NVIDIA RTX AI
+            secRtx = Section("NVIDIA RTX AI  (RTX GPU)");
+            lblRtxStatus = new Label { Text = "Detecting RTX engines…", ForeColor = Theme.Muted, Font = fSmall, AutoSize = true, MaximumSize = new Size(Theme.S(400), 0), Margin = new Padding(0, 0, 0, Theme.S(6)) };
+            AddRow(secRtx, null, lblRtxStatus);
+            cbRtxEngine = Combo("Auto (best available)", "FFmpeg RTX filters only", "NVIDIA driver (built-in)", "RTXVideoProcessor.exe only");
+            cbRtxEngine.SelectedIndexChanged += (s2, e2) => UpdateRtxStatus();
+            AddRow(secRtx, "Engine", cbRtxEngine);
+            var bProc = Btn("Locate RTXVideoProcessor.exe…", 0); bProc.Dock = DockStyle.Fill; bProc.Height = Theme.S(30); bProc.Font = fSmall;
+            bProc.Click += (s2, e2) => LocateRtxProcessor();
+            AddRow(secRtx, null, bProc);
+
+            chkVsr = Check("RTX Video Super Resolution (AI upscale + cleanup)");
+            AddRow(secRtx, null, chkVsr);
+            cbVsrQ = Combo("1 — Low", "2 — Medium", "3 — High", "4 — Ultra");
+            cbVsrQ.SelectedIndex = 3;
+            cbVsrScale = Combo("×2", "×3", "×4");
+            btnVsrParams = Btn("All VSR filter parameters…", 0); btnVsrParams.Dock = DockStyle.Fill; btnVsrParams.Height = Theme.S(30); btnVsrParams.Font = fSmall;
+            btnVsrParams.Click += (s2, e2) => EditRtxParams(Rtx.VsrFilters, ref vsrExpr, btnVsrParams, "VSR");
+            vsrRows.Add(AddRow(secRtx, "   VSR quality", cbVsrQ)); vsrRows.Add(cbVsrQ);
+            vsrRows.Add(AddRow(secRtx, "   Upscale factor", cbVsrScale)); vsrRows.Add(cbVsrScale);
+            AddRow(secRtx, null, btnVsrParams); vsrRows.Add(btnVsrParams);
+
+            chkHdr = Check("RTX TrueHDR (SDR → HDR10)");
+            AddRow(secRtx, null, chkHdr);
+            nuHdrContrast = Num(0, 200, 125, 0); nuHdrSat = Num(0, 200, 100, 0); nuHdrGray = Num(10, 100, 25, 0); nuHdrLum = Num(400, 10000, 1000, 0);
+            nuHdrLum.Increment = 50;
+            btnHdrParams = Btn("All TrueHDR filter parameters…", 0); btnHdrParams.Dock = DockStyle.Fill; btnHdrParams.Height = Theme.S(30); btnHdrParams.Font = fSmall;
+            btnHdrParams.Click += (s2, e2) => EditRtxParams(Rtx.HdrFilters, ref hdrExpr, btnHdrParams, "TrueHDR");
+            hdrRows.Add(AddRow(secRtx, "   Contrast", nuHdrContrast)); hdrRows.Add(nuHdrContrast);
+            hdrRows.Add(AddRow(secRtx, "   Saturation", nuHdrSat)); hdrRows.Add(nuHdrSat);
+            hdrRows.Add(AddRow(secRtx, "   Middle gray", nuHdrGray)); hdrRows.Add(nuHdrGray);
+            hdrRows.Add(AddRow(secRtx, "   Peak brightness (nits)", nuHdrLum)); hdrRows.Add(nuHdrLum);
+            AddRow(secRtx, null, btnHdrParams); hdrRows.Add(btnHdrParams);
+
+            chkDlss = Check("DLSS Super Resolution (NVIDIA NGX AI)");
+            AddRow(secRtx, null, chkDlss);
+            cbDlssMode = Combo("DLAA — native size, AI clean-up (×1)", "Quality (×1.5)", "Balanced (×1.72)", "Performance (×2)", "Ultra Performance (×3)");
+            cbDlssMode.SelectedIndex = 3;
+            btnDlssParams = Btn("All DLSS / NGX filter parameters…", 0); btnDlssParams.Dock = DockStyle.Fill; btnDlssParams.Height = Theme.S(30); btnDlssParams.Font = fSmall;
+            btnDlssParams.Click += (s2, e2) => EditRtxParams(Rtx.DlssFilters, ref dlssExpr, btnDlssParams, "DLSS");
+            dlssRows.Add(AddRow(secRtx, "   DLSS mode", cbDlssMode)); dlssRows.Add(cbDlssMode);
+            AddRow(secRtx, null, btnDlssParams); dlssRows.Add(btnDlssParams);
+
+            var rtxHint = new Label { Text = "Needs an NVIDIA RTX GPU and a recent driver. TrueHDR needs a 10-bit codec (H.265, AV1, VP9, ProRes…). RTXVideoProcessor: VSR ×2 + TrueHDR, NVENC output, MP4/MKV/MOV.", ForeColor = Theme.Muted, Font = fSmall, AutoSize = true, MaximumSize = new Size(Theme.S(400), 0), Margin = new Padding(0, Theme.S(6), 0, 0) };
+            AddRow(secRtx, null, rtxHint);
+            EventHandler rtxToggle = (s2, e2) => UpdateRtxRows();
+            chkVsr.CheckedChanged += rtxToggle; chkHdr.CheckedChanged += rtxToggle; chkDlss.CheckedChanged += rtxToggle;
+            UpdateRtxRows();
+            stack.Controls.Add(secRtx);
+
             // Audio
             secAudio = Section("AUDIO SETTINGS");
             cbACodec = Combo(Formats.AudioCodecsForVideo.Cast<object>().ToArray());
             SkipSeparator(cbACodec);
             cbAKbps = Combo("Auto", "64", "96", "128", "160", "192", "256", "320", "448", "640");
             cbRate = Combo("Original", "8000 Hz", "16000 Hz", "22050 Hz", "32000 Hz", "44100 Hz", "48000 Hz", "88200 Hz", "96000 Hz", "192000 Hz");
-            cbCh = Combo("Original", "Mono", "Stereo", "5.1 Surround", "7.1 Surround");
+            cbCh = Combo(ChannelLayouts.All.Select(l => (object)new Choice(l.Key, l.Label)).ToArray());
+            cbCh.DropDownWidth = Theme.S(380);
+            tips.SetToolTip(cbCh, "Immersive layouts (5.1.2 … 9.1.6) are written as discrete channel beds: FFmpeg cannot encode Dolby Atmos objects or DTS:X metadata.\nUse PCM 24-bit (WAV/W64/CAF/MOV/MKV) or Opus for more than 8 channels.\n\"Passthrough\" copies an existing Atmos / DTS:X track bit-for-bit.");
             nuVolume = Num(0, 1000, 100, 0); nuVolume.Increment = 10;
             chkNorm = Check("Normalize loudness (EBU R128)");
             lblACodec = AddRow(secAudio, "Audio codec", cbACodec);
             AddRow(secAudio, "Bitrate (kbps)", cbAKbps);
             AddRow(secAudio, "Sample rate", cbRate);
             AddRow(secAudio, "Channels", cbCh);
+            cbUpmix = Combo("Auto — Cinema for videos, Music for audio",
+                            "Music — vocals forward, instruments spread, air above",
+                            "Cinema — dialogue locked to center, ambience overhead",
+                            "Live concert — big room, audience all around",
+                            "Off — keep the extra channels silent");
+            cbUpmix.DropDownWidth = Theme.S(380);
+            tips.SetToolTip(cbUpmix, "Immersive upmix (when the source has fewer channels than the chosen layout):\n" +
+                "• lead vocal / dialogue (centered sound) is steered to the center speaker, closer to you\n" +
+                "• instruments keep their stereo position across front, wides and sides\n" +
+                "• bass and kick drum feed the LFE (subwoofer)\n" +
+                "• stereo width, reverb, room and cymbals feed the wides and the height speakers (the voice never goes up)\n" +
+                "Channel-based mix: not Dolby Atmos objects.");
+            lblUpmix = AddRow(secAudio, "Immersive upmix", cbUpmix);
+            cbCh.SelectedIndexChanged += (s2, e2) => UpdateUpmixRow();
             AddRow(secAudio, "Volume (%)", nuVolume);
             AddRow(secAudio, null, chkNorm);
             stack.Controls.Add(secAudio);
@@ -540,6 +660,8 @@ namespace FFmpegForge
                 ? (fl.Count + dyn.Count) + " " + kn + " formats  (" + fl.Count + " tuned presets + " + dyn.Count + " from your FFmpeg build)"
                 : fl.Count + " " + kn + " formats" + (FormatCatalog.Loaded ? "" : "  — reading every FFmpeg format…");
             secVideo.Visible = k == MediaKind.Video;
+            secRtx.Visible = k == MediaKind.Video;
+            secScale.Visible = k != MediaKind.Audio;
             secAudio.Visible = k != MediaKind.Image;
             secImage.Visible = k == MediaKind.Image;
             OnFormatChanged();
@@ -621,6 +743,10 @@ namespace FFmpegForge
 
         void OnCatalogLoaded()
         {
+            string rp; settings.TryGetValue("rtxproc", out rp);
+            Rtx.FindProcessor(rp);
+            UpdateRtxStatus();
+            UpdateScaleRows();
             header.FilterCount = FilterCatalog.All.Count;
             header.Invalidate();
             RefreshFilterList(filterList.SelectedIndex);
@@ -872,6 +998,105 @@ namespace FFmpegForge
             return r;
         }
 
+        // ---------- NVIDIA RTX AI ----------
+        void UpdateScaleRows()
+        {
+            foreach (var c in scaleRows) if (c != null) c.Visible = chkScale.Checked;
+            var t = cbScaleType.SelectedItem as Scaling.ScaleType;
+            if (t == null) return;
+            tbScaleSharp.Enabled = t.Sharpness;
+            lblScaleSharpVal.ForeColor = t.Sharpness ? Theme.Text : Theme.Muted;
+            bool lp = Scaling.HasLibplacebo;
+            string where = t.GpuOnly ? "GPU (libplacebo / Vulkan)" : (chkScaleOpt.Checked && lp && (t.Key == "nearest" || t.Key == "bicubic" || t.Key == "lanczos" || t.Key == "spline" || t.Key == "bcas") ? "GPU (libplacebo / Vulkan)" : "CPU");
+            string text = "Runs on: " + where + (t.Sharpness ? "" : "  ·  sharpness not used by this type");
+            if (FilterCatalog.Loaded && !lp && t.GpuOnly) text = "⚠ Your FFmpeg build has no libplacebo (Vulkan) filter: this type needs a \"full\" FFmpeg build.";
+            lblScaleInfo.Text = text + "\nLS1 (Lossless Scaling's own algorithm) is proprietary and cannot be included.";
+            lblScaleInfo.ForeColor = text.StartsWith("⚠") ? Theme.Accent1 : Theme.Muted;
+        }
+
+        void UpdateUpmixRow()
+        {
+            var c = cbCh.SelectedItem as Choice;
+            var l = c != null ? ChannelLayouts.Get(c.Key) : null;
+            bool on = l != null && new[] { "5.1", "7.1", "5.1.2", "5.1.4", "7.1.2", "7.1.4", "7.1.6", "9.1.4", "9.1.6" }.Contains(l.Key);
+            cbUpmix.Visible = lblUpmix.Visible = on;
+        }
+
+        void UpdateRtxRows()
+        {
+            foreach (var c in vsrRows) if (c != null) c.Visible = chkVsr.Checked;
+            foreach (var c in hdrRows) if (c != null) c.Visible = chkHdr.Checked;
+            foreach (var c in dlssRows) if (c != null) c.Visible = chkDlss.Checked;
+        }
+
+        void UpdateRtxStatus()
+        {
+            if (lblRtxStatus == null) return;
+            lblRtxStatus.Text = Rtx.StatusText();
+            btnVsrParams.Enabled = Rtx.NativeVsr;
+            btnHdrParams.Enabled = Rtx.NativeHdr;
+            btnDlssParams.Enabled = Rtx.NativeDlss;
+            bool any = Rtx.AnyNative || Rtx.HasProcessor;
+            lblRtxStatus.ForeColor = any ? Theme.Success : Theme.Muted;
+        }
+
+        void LocateRtxProcessor()
+        {
+            using (var d = new OpenFileDialog { Title = "Select RTXVideoProcessor.exe (NVIDIA RTX Video SDK)", Filter = "RTXVideoProcessor.exe|RTXVideoProcessor.exe;*.exe" })
+            {
+                if (d.ShowDialog(this) != DialogResult.OK) return;
+                Rtx.ProcessorPath = d.FileName;
+                settings["rtxproc"] = d.FileName;
+                SaveSettings();
+                UpdateRtxStatus();
+                Log("RTXVideoProcessor: " + d.FileName, Theme.Muted);
+            }
+        }
+
+        void EditRtxParams(string[] names, ref string expr, FlatBtn btn, string what)
+        {
+            if (!EnsureCatalog()) return;
+            string f = Rtx.Pick(names);
+            if (f == null) { Log(what + ": your FFmpeg build has no " + string.Join(" / ", names) + " filter.", Theme.Accent1); return; }
+            using (var d = new FilterBrowser(new FilterEntry { Kind = 'V', Expr = string.IsNullOrWhiteSpace(expr) ? f : expr }))
+            {
+                if (d.ShowDialog(this) != DialogResult.OK || d.Result == null) return;
+                string e = d.Result.Expr.Trim();
+                expr = e == f ? null : e;
+                btn.Text = "All " + what + " filter parameters…" + (expr != null ? "  (custom ✓)" : "");
+                Log(what + " parameters: " + (expr ?? "automatic"), Theme.Text);
+            }
+        }
+
+        bool BuildJobCommand(Job job, ConvSettings s, string outPath, out string exe, out string args, out double expected, out string err)
+        {
+            Rtx.DriverPlan plan;
+            return BuildJobCommand(job, s, outPath, out exe, out args, out expected, out err, out plan);
+        }
+
+        bool BuildJobCommand(Job job, ConvSettings s, string outPath, out string exe, out string args, out double expected, out string err, out Rtx.DriverPlan plan)
+        {
+            exe = Runner.FFmpeg;
+            plan = null;
+            string why;
+            string engine = s.Format.Kind == MediaKind.Video && s.RtxActive ? Rtx.Engine(s, out why) : null;
+            if (engine == "driver")
+            {
+                plan = Rtx.PlanDriver(job, s, outPath, out err);
+                expected = plan != null ? plan.Expected : 0;
+                args = plan != null ? plan.Text() : null;
+                exe = Rtx.DriverPath;
+                return plan != null;
+            }
+            if (engine == "processor")
+            {
+                exe = Rtx.ProcessorPath;
+                args = Rtx.ProcessorArgs(job, s, outPath, out expected, out err);
+            }
+            else args = CommandBuilder.Build(job, s, outPath, out expected, out err);
+            return args != null;
+        }
+
         void ChooseFFmpeg()
         {
             using (var d = new OpenFileDialog { Title = "Select ffmpeg.exe", Filter = "ffmpeg.exe|ffmpeg.exe|Programs (*.exe)|*.exe", InitialDirectory = Directory.Exists(@"C:\FFmpeg\bin") ? @"C:\FFmpeg\bin" : "" })
@@ -1032,7 +1257,6 @@ namespace FFmpegForge
         //  Conversion
         // =====================================================================
         static readonly int[] RateValues = { 0, 8000, 16000, 22050, 32000, 44100, 48000, 88200, 96000, 192000 };
-        static readonly int[] ChValues = { 0, 1, 2, 6, 8 };
 
         ConvSettings Snapshot()
         {
@@ -1049,12 +1273,32 @@ namespace FFmpegForge
             s.Fps = fps;
             s.Rotate = s.Format.Kind == MediaKind.Image ? cbImgRotate.SelectedIndex : cbRotate.SelectedIndex;
             s.KeepSubs = chkSubs.Checked;
+            s.RtxVsr = chkVsr.Checked && s.Format.Kind == MediaKind.Video;
+            s.RtxHdr = chkHdr.Checked && s.Format.Kind == MediaKind.Video;
+            s.Dlss = chkDlss.Checked && s.Format.Kind == MediaKind.Video;
+            s.VsrQuality = cbVsrQ.SelectedIndex + 1;
+            s.VsrScale = cbVsrScale.SelectedIndex + 2;
+            s.HdrContrast = (int)nuHdrContrast.Value; s.HdrSaturation = (int)nuHdrSat.Value;
+            s.HdrMiddleGray = (int)nuHdrGray.Value; s.HdrMaxLum = (int)nuHdrLum.Value;
+            s.DlssScale = new[] { 1.0, 1.5, 1.72, 2.0, 3.0 }[cbDlssMode.SelectedIndex];
+            s.DlssQuality = new[] { 4, 4, 3, 2, 1 }[cbDlssMode.SelectedIndex];
+            s.VsrExpr = vsrExpr; s.HdrExpr = hdrExpr; s.DlssExpr = dlssExpr;
+            s.RtxEnginePref = new[] { "auto", "native", "driver", "processor" }[cbRtxEngine.SelectedIndex];
+            s.ScaleEnabled = chkScale.Checked && s.Format.Kind != MediaKind.Audio;
+            s.ScaleType = cbScaleType.SelectedItem is Scaling.ScaleType ? ((Scaling.ScaleType)cbScaleType.SelectedItem).Key : "fsr";
+            s.ScaleFactor = new[] { 1.5, 2.0, 2.5, 3.0, 4.0, 0.0 }[Math.Max(0, cbScaleFactor.SelectedIndex)];
+            if (s.ScaleFactor == 0 && s.ResW <= 0 && s.ResH <= 0) s.ScaleFactor = 2.0;
+            s.ScaleSharpness = tbScaleSharp.Value;
+            s.ScaleOptimized = chkScaleOpt.Checked;
+            s.ScaleFidelity = chkScaleFid.Checked;
+            s.ScaleFullChroma = chkScale444.Checked;
             s.StillDuration = (double)nuStill.Value;
             s.ACodec = cbACodec.SelectedItem is Choice ? ((Choice)cbACodec.SelectedItem).Key : "auto";
             int kb = 0; if (cbAKbps.SelectedIndex > 0) int.TryParse(cbAKbps.Text, out kb);
             s.AKbps = cbAKbps.Enabled ? kb : 0;
             s.SampleRate = RateValues[cbRate.SelectedIndex];
-            s.Channels = ChValues[cbCh.SelectedIndex];
+            s.ChLayout = cbCh.SelectedItem is Choice ? ((Choice)cbCh.SelectedItem).Key : "";
+            s.UpmixStyle = cbUpmix.SelectedIndex;
             s.Normalize = chkNorm.Checked;
             s.VolumePct = (int)nuVolume.Value;
             s.ImgQuality = tbImgQ.Value;
@@ -1116,8 +1360,15 @@ namespace FFmpegForge
             if (j == null) { Log("Add a file first.", Theme.Accent1); return; }
             var s = Snapshot();
             double exp; string err;
-            string args = CommandBuilder.Build(j, s, MakeOutPath(j, s, IsSequence(j, s)), out exp, out err);
+            string exe, args;
+            BuildJobCommand(j, s, MakeOutPath(j, s, IsSequence(j, s)), out exe, out args, out exp, out err);
             if (args == null) { Log("Impossible: " + err, Theme.Error); return; }
+            if (exe != Runner.FFmpeg)
+            {
+                Log("\"" + exe + "\" " + args, Theme.Text);
+                try { Clipboard.SetText("\"" + exe + "\" " + args); Log("(command copied to clipboard)", Theme.Muted); } catch { }
+                return;
+            }
             string shown = args.Replace("-hide_banner -nostdin -y -loglevel warning -progress pipe:1 -nostats ", "-y ");
             Log("ffmpeg " + shown, Theme.Text);
             try { Clipboard.SetText("\"" + (Runner.FFmpeg.Length > 0 ? Runner.FFmpeg : "ffmpeg") + "\" " + shown); Log("(command copied to clipboard)", Theme.Muted); } catch { }
@@ -1170,8 +1421,12 @@ namespace FFmpegForge
                 bool seq = IsSequence(job, s);
                 string outPath = MakeOutPath(job, s, seq);
                 double expected; string err;
-                string args = CommandBuilder.Build(job, s, outPath, out expected, out err);
+                string exe, args;
+                Rtx.DriverPlan plan;
+                BuildJobCommand(job, s, outPath, out exe, out args, out expected, out err, out plan);
                 job.Output = outPath;
+                if (s.DlssSkipped)
+                    UI(() => Log("   ⚠ DLSS skipped: NVIDIA offers no DLSS for video files (it needs a game engine). RTX Video Super Resolution is applied instead.", Theme.Accent1));
                 UI(() =>
                 {
                     statusLbl.Text = "Converting " + (index + 1) + " / " + jobs.Count + "  —  " + Path.GetFileName(job.Path);
@@ -1192,7 +1447,25 @@ namespace FFmpegForge
                 int code;
                 try
                 {
-                    code = Runner.Run(args, expected,
+                    if (plan != null)
+                    {
+                        var pl = plan;
+                        UI(() => Log("   RTX driver engine: " + pl.W + "×" + pl.H + " → " + pl.OW + "×" + pl.OH + (s.RtxHdr ? "  ·  HDR10" : ""), Theme.Muted));
+                        code = Rtx.RunDriver(plan,
+                            p =>
+                            {
+                                job.Progress = p;
+                                long now = jsw.ElapsedMilliseconds;
+                                if (now - lastUi < 120 && p < 1) return;
+                                lastUi = now;
+                                double ov = (index + p) / jobs.Count;
+                                UI(() => { overall.Value = ov; RefreshRow(job); });
+                            },
+                            line => UI(() => Log("   " + line, line.StartsWith("ForgeRTX") ? Color.FromArgb(118, 185, 0) : Color.FromArgb(200, 170, 110))),
+                            () => cancelRequested, out lastErr);
+                    }
+                    else
+                    code = Runner.Run(exe, args, expected,
                         p =>
                         {
                             job.Progress = p;
@@ -1254,6 +1527,8 @@ namespace FFmpegForge
         {
             if (string.IsNullOrEmpty(err)) return null;
             string e = err.ToLowerInvariant();
+            if (e.Contains("vulkan") || e.Contains("libplacebo") || e.Contains("failed creating vulkan") || e.Contains("device creation failed"))
+                return "The GPU path (Vulkan / libplacebo) could not start. Update your graphics driver, or untick \"Optimized\" / pick a CPU scale type (xBR, Integer, Sharp bilinear, BCAS, Lanczos).";
             if (e.Contains("no such filter")) return "This filter is not included in your FFmpeg build. Pick it from the Filter library to see what is available.";
             if (e.Contains("error parsing") || e.Contains("error initializing filter") || e.Contains("option not found") || e.Contains("error applying option")) return "A filter parameter is invalid. Double-click the filter to edit it, or check its documentation.";
             if (e.Contains("cannot find a matching stream") || e.Contains("invalid stream specifier")) return "The filtergraph refers to a stream that does not exist (e.g. [1:v] without an extra input).";
@@ -1328,6 +1603,33 @@ namespace FFmpegForge
                 foreach (var part in v.Split('\u001F')) { var fe = FilterEntry.Parse(part); if (fe != null) filters.Add(fe); }
             if (settings.TryGetValue("graph", out v)) txtGraph.Text = v.Replace("\u001D", "\r\n");
             if (settings.TryGetValue("extra", out v)) txtExtraInputs.Text = v;
+            if (settings.TryGetValue("chlayout", out v))
+                for (int ci = 0; ci < cbCh.Items.Count; ci++) if (((Choice)cbCh.Items[ci]).Key == v) cbCh.SelectedIndex = ci;
+            Func<string, int, int> gi = (key, def) => { string x; int r; return settings.TryGetValue(key, out x) && int.TryParse(x, out r) ? r : def; };
+            cbUpmix.SelectedIndex = Math.Max(0, Math.Min(4, gi("upmix", 0)));
+            chkScale.Checked = gi("scale_on", 0) == 1;
+            if (settings.TryGetValue("scale_type", out v))
+                for (int si = 0; si < cbScaleType.Items.Count; si++) if (((Scaling.ScaleType)cbScaleType.Items[si]).Key == v) cbScaleType.SelectedIndex = si;
+            cbScaleFactor.SelectedIndex = Math.Max(0, Math.Min(5, gi("scale_factor", 1)));
+            tbScaleSharp.Value = Math.Max(0, Math.Min(100, gi("scale_sharp", 100)));
+            chkScaleOpt.Checked = gi("scale_opt", 1) == 1;
+            chkScaleFid.Checked = gi("scale_fid", 1) == 1;
+            chkScale444.Checked = gi("scale_444", 1) == 1;
+            UpdateScaleRows();
+            UpdateUpmixRow();
+            chkVsr.Checked = gi("rtx_vsr", 0) == 1; chkHdr.Checked = gi("rtx_hdr", 0) == 1; chkDlss.Checked = gi("rtx_dlss", 0) == 1;
+            cbVsrQ.SelectedIndex = Math.Max(0, Math.Min(3, gi("vsr_q", 3)));
+            cbVsrScale.SelectedIndex = Math.Max(0, Math.Min(2, gi("vsr_scale", 0)));
+            cbDlssMode.SelectedIndex = Math.Max(0, Math.Min(4, gi("dlss_mode", 3)));
+            cbRtxEngine.SelectedIndex = Math.Max(0, Math.Min(3, gi("rtx_engine2", 0)));
+            nuHdrContrast.Value = Math.Max(0, Math.Min(200, gi("hdr_contrast", 125)));
+            nuHdrSat.Value = Math.Max(0, Math.Min(200, gi("hdr_sat", 100)));
+            nuHdrGray.Value = Math.Max(10, Math.Min(100, gi("hdr_gray", 25)));
+            nuHdrLum.Value = Math.Max(400, Math.Min(10000, gi("hdr_lum", 1000)));
+            if (settings.TryGetValue("vsr_expr", out v) && v.Length > 0) { vsrExpr = v; btnVsrParams.Text += "  (custom ✓)"; }
+            if (settings.TryGetValue("hdr_expr", out v) && v.Length > 0) { hdrExpr = v; btnHdrParams.Text += "  (custom ✓)"; }
+            if (settings.TryGetValue("dlss_expr", out v) && v.Length > 0) { dlssExpr = v; btnDlssParams.Text += "  (custom ✓)"; }
+            UpdateRtxRows();
             RefreshFilterList(-1);
             MediaKind k = MediaKind.Video;
             if (settings.TryGetValue("category", out v)) { try { k = (MediaKind)Enum.Parse(typeof(MediaKind), v); } catch { } }
@@ -1349,6 +1651,22 @@ namespace FFmpegForge
                 settings["filters"] = string.Join("\u001F", filters.Select(f => f.Serialize()).ToArray());
                 settings["graph"] = txtGraph.Text.Replace("\r\n", "\u001D").Replace("\n", "\u001D");
                 settings["extra"] = txtExtraInputs.Text;
+                settings["chlayout"] = cbCh.SelectedItem is Choice ? ((Choice)cbCh.SelectedItem).Key : "";
+                settings["upmix"] = cbUpmix.SelectedIndex.ToString();
+                settings["scale_on"] = chkScale.Checked ? "1" : "0";
+                settings["scale_type"] = cbScaleType.SelectedItem is Scaling.ScaleType ? ((Scaling.ScaleType)cbScaleType.SelectedItem).Key : "fsr";
+                settings["scale_factor"] = cbScaleFactor.SelectedIndex.ToString();
+                settings["scale_sharp"] = tbScaleSharp.Value.ToString();
+                settings["scale_opt"] = chkScaleOpt.Checked ? "1" : "0";
+                settings["scale_fid"] = chkScaleFid.Checked ? "1" : "0";
+                settings["scale_444"] = chkScale444.Checked ? "1" : "0";
+                settings["rtx_vsr"] = chkVsr.Checked ? "1" : "0"; settings["rtx_hdr"] = chkHdr.Checked ? "1" : "0"; settings["rtx_dlss"] = chkDlss.Checked ? "1" : "0";
+                settings["vsr_q"] = cbVsrQ.SelectedIndex.ToString(); settings["vsr_scale"] = cbVsrScale.SelectedIndex.ToString();
+                settings["dlss_mode"] = cbDlssMode.SelectedIndex.ToString(); settings["rtx_engine2"] = cbRtxEngine.SelectedIndex.ToString();
+                settings["hdr_contrast"] = nuHdrContrast.Value.ToString(); settings["hdr_sat"] = nuHdrSat.Value.ToString();
+                settings["hdr_gray"] = nuHdrGray.Value.ToString(); settings["hdr_lum"] = nuHdrLum.Value.ToString();
+                settings["vsr_expr"] = vsrExpr ?? ""; settings["hdr_expr"] = hdrExpr ?? ""; settings["dlss_expr"] = dlssExpr ?? "";
+                if (!string.IsNullOrEmpty(Rtx.ProcessorPath)) settings["rtxproc"] = Rtx.ProcessorPath;
                 Directory.CreateDirectory(Path.GetDirectoryName(settingsPath));
                 File.WriteAllLines(settingsPath, settings.Select(kv => kv.Key + "=" + kv.Value.Replace("\r", "").Replace("\n", "")).ToArray(), Encoding.UTF8);
             }

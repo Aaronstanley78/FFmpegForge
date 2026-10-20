@@ -21,6 +21,9 @@ namespace FFmpegForge
         public string Error;
         public bool HasVideo, HasAudio;
         public string Info = "";
+        public int Width, Height;            // first video stream
+        public int FpsNum, FpsDen;           // r_frame_rate
+        public int AudioChannels;            // first audio stream
         public bool Probed;
     }
 
@@ -42,7 +45,10 @@ namespace FFmpegForge
         public string ACodec = "auto";
         public int AKbps;
         public int SampleRate;
-        public int Channels;
+        public string ChLayout = "";
+        public int UpmixStyle;        // 0 auto, 1 music, 2 cinema, 3 live, 4 off
+        public int SourceChannels;    // filled per job (for the immersive upmix)
+        public bool SourceIsVideo;  // "" original, "copy" = passthrough (Atmos / DTS:X), or a layout key
         public bool Normalize;
         public int VolumePct = 100;
         // image
@@ -59,6 +65,23 @@ namespace FFmpegForge
         public List<FilterEntry> Filters = new List<FilterEntry>();
         public string FilterComplex = "";
         public List<string> ExtraInputs = new List<string>();
+        // NVIDIA RTX AI
+        public bool RtxVsr, RtxHdr, Dlss;
+        public int VsrQuality = 4, VsrScale = 2;
+        public int HdrContrast = 125, HdrSaturation = 100, HdrMiddleGray = 25, HdrMaxLum = 1000;
+        public int DlssQuality = 4; public double DlssScale = 2;
+        public string VsrExpr, HdrExpr, DlssExpr;     // custom expressions from the parameter editor
+        public string RtxEnginePref = "auto";         // auto | native | processor
+        public bool RtxActive { get { return RtxVsr || RtxHdr || Dlss; } }
+        public bool DlssSkipped;
+        // Scale (Échelle)
+        public bool ScaleEnabled;
+        public string ScaleType = "fsr";
+        public double ScaleFactor = 2;    // 0 = use the Resolution setting
+        public int ScaleSharpness = 100;  // 0..100 %
+        public bool ScaleOptimized = true;
+        public bool ScaleFidelity = true;     // screen-quality encode (10-bit, lower CRF, edge-preserving tuning)
+        public bool ScaleFullChroma = true;   // 4:4:4 chroma (no colour blur on sharpened edges)
 
         public string UserVideoChain() { return string.Join(",", Filters.Where(f => f.Enabled && f.Kind == 'V').Select(f => f.Expr.Trim()).Where(e => e.Length > 0).ToArray()); }
         public string UserAudioChain() { return string.Join(",", Filters.Where(f => f.Enabled && f.Kind == 'A').Select(f => f.Expr.Trim()).Where(e => e.Length > 0).ToArray()); }
@@ -92,6 +115,8 @@ namespace FFmpegForge
             bool animated = IsAnimatedImageSource(job);
             if (animated) src = MediaKind.Video;
 
+            s.SourceChannels = job.AudioChannels;
+            s.SourceIsVideo = job.Kind == MediaKind.Video;
             string userV = s.UserVideoChain();
             string userA = s.UserAudioChain();
             bool userGraph = !string.IsNullOrWhiteSpace(s.FilterComplex);
@@ -138,6 +163,30 @@ namespace FFmpegForge
                     expected = trimmedDur;
                 }
                 if (copyV && userV.Length > 0) { error = "Video filters cannot be used with \"Stream copy\". Pick a real video codec."; return null; }
+                string rtxChain = null;
+                if (s.RtxActive)
+                {
+                    string why;
+                    if (Rtx.Engine(s, out why) != "native") { error = why ?? "RTX processing is handled by RTXVideoProcessor."; return null; }
+                    if (copyV || special || fromAudio) { error = "RTX AI processing needs a real video codec (not stream copy / GIF / audio source)."; return null; }
+                    if (s.RtxHdr)
+                    {
+                        string k = MapCodec(vkey, true);
+                        if (k == "h264" || k == "nvh264" || k == "qsvh264" || k == "amfh264" || k == "mpeg2" || k == "mpeg4" || k == "mjpeg" || k == "wmv2" || k == "theora" || k == "vp8")
+                        { error = "RTX TrueHDR produces 10-bit HDR: choose H.265, AV1, VP9, ProRes or DNxHR HQX (8-bit codecs such as H.264 cannot carry HDR)."; return null; }
+                    }
+                    rtxChain = Rtx.NativeChain(s);
+                }
+                bool scaleVk = false;
+                string scaleChain = null;
+                if (s.ScaleEnabled && !fromAudio && !copyV)
+                {
+                    if (s.RtxActive) { error = "\"Scale\" and NVIDIA RTX AI are two different upscalers: tick only one of them."; return null; }
+                    string serr;
+                    scaleChain = Scaling.Filter(s, job, false, out scaleVk, out serr);
+                    if (serr != null) { error = serr; return null; }
+                    if (scaleVk) pre.Insert(0, Scaling.VulkanArgs.Trim());
+                }
 
                 var rot = new List<string>();
                 AddRotate(rot, s.Rotate);
@@ -155,17 +204,17 @@ namespace FFmpegForge
                 }
                 else if (vkey == "gif")
                 {
-                    vf = Join(rotChain, userV,
+                    vf = Join(rotChain, userV, scaleChain,
                         "fps=" + Formats.Inv(fps > 0 ? fps : 15),
-                        ScaleFilter(s, false) ?? "scale='min(640,iw)':-1:flags=lanczos",
+                        ScaleFilter(s, false) ?? (scaleChain != null ? null : "scale='min(640,iw)':-1:flags=lanczos"),
                         "split[a][b];[a]palettegen=stats_mode=diff[p];[b][p]paletteuse=dither=bayer:bayer_scale=4");
                     post.Add("-c:v gif");
                     needVideoMap = true;
                 }
                 else if (vkey == "apng" || vkey == "webpanim")
                 {
-                    vf = Join(rotChain, userV, fps <= 0 ? "fps=20" : null,
-                        ScaleFilter(s, false) ?? "scale='min(800,iw)':-1:flags=lanczos");
+                    vf = Join(rotChain, userV, scaleChain, fps <= 0 ? "fps=20" : null,
+                        ScaleFilter(s, false) ?? (scaleChain != null ? null : "scale='min(800,iw)':-1:flags=lanczos"));
                     if (fps > 0) post.Add("-r " + Formats.Inv(fps));
                     post.Add(vkey == "apng" ? "-c:v apng -f apng" : "-c:v libwebp_anim -lossless 0 -quality " + new[] { 95, 90, 80, 70, 55 }[Clamp(s.QualityIdx, 0, 4)]);
                     needVideoMap = true;
@@ -176,18 +225,32 @@ namespace FFmpegForge
                     {
                         bool even = NeedsEven(vkey);
                         string[] rule = FormatRules.Video(Tail(MapCodec(vkey, true)), fmt.Muxer);
-                        vf = Join(rotChain, userV, ScaleFilter(s, even) ?? (even ? "scale=trunc(iw/2)*2:trunc(ih/2)*2" : null), rule != null ? rule[0] : null,
+                        vf = Join(rtxChain, rotChain, userV, scaleChain, ScaleFilter(s, even) ?? (even ? "scale=trunc(iw/2)*2:trunc(ih/2)*2" : null), rule != null ? rule[0] : null,
                             vkey.StartsWith("dnxhr") ? "scale='max(256,trunc(iw/2)*2)':'max(120,trunc(ih/2)*2)'" : null);   // DNxHR minimum 256x120
                         if (fps > 0 && !fromStill) post.Add("-r " + Formats.Inv(fps));
                         if (rule != null && rule[2] != null) { post.Add(rule[2]); vkey = "__replaced"; }
                         else if (rule != null) post.Add(rule[1]);
                     }
-                    if (vkey != "__replaced") post.Add(VideoArgs(vkey, s, fmt.Ext));
+                    if (vkey != "__replaced")
+                    {
+                        string va = VideoArgs(vkey, s, fmt.Ext);
+                        if (s.RtxHdr)   // keep the 10-bit HDR10 signal produced by TrueHDR
+                        {
+                            bool nv = va.Contains("_nvenc");
+                            va = va.Replace("-pix_fmt yuv420p", "-pix_fmt " + (nv ? "p010le" : "yuv420p10le"));
+                            if (!va.Contains("-pix_fmt")) va += " -pix_fmt " + (nv ? "p010le" : "yuv420p10le");
+                            va += " -color_primaries bt2020 -color_trc smpte2084 -colorspace bt2020nc";
+                            if (va.Contains("libx265")) va += " -x265-params hdr10=1:repeat-headers=1";
+                        }
+                        if (scaleChain != null && !s.RtxHdr) va = Scaling.Fidelity(s, va, ref vf, scaleVk);
+                        post.Add(va);
+                    }
                     needVideoMap = true;
                 }
 
                 // ---- audio track ----
                 string akey = s.ACodec == "auto" ? fmt.ACodec : s.ACodec;
+                if (s.ChLayout == "copy" && akey != "none") akey = "copy";   // keep Atmos / DTS:X bitstream untouched
                 if (special) akey = "none";
                 bool graphAudio = userGraph && s.FilterComplex.Contains("[aout]");
                 if (!graphAudio && (fromStill || (!job.HasAudio && job.Probed && !fromAudio))) akey = "none";
@@ -196,9 +259,16 @@ namespace FFmpegForge
                 else
                 {
                     if (akey == "copy" && userA.Length > 0) { error = "Audio filters cannot be used with audio \"Stream copy\"."; return null; }
-                    if (akey != "copy") af = AudioChain(s, userA);
+                    if (akey != "copy")
+                    {
+                        string lerr = ChannelLayouts.Check(s.ChLayout, akey);
+                        if (lerr != null && s.ACodec == "auto") { string alt = ChannelLayouts.AutoCodec(fmt.Ext); if (alt != null) { akey = alt; lerr = null; } }
+                        if (lerr != null) { error = lerr; return null; }
+                        af = AudioChain(s, userA);
+                    }
                     post.Add(AudioFormatArgs(s, akey != "copy"));
                     post.Add(AudioArgs(akey, s.AKbps));
+                    if (akey != "copy") post.Add(ChannelLayouts.ExtraArgs(s.ChLayout, akey));
                     if (akey != "copy") post.Add(FormatRules.Audio(Tail(MapCodec(akey, false)), fmt.Muxer));
                     needAudioMap = true;
                 }
@@ -225,11 +295,19 @@ namespace FFmpegForge
                 expected = trimmedDur;
                 post.Add("-vn -sn");
                 string akeyA = s.ACodec == "auto" || s.ACodec == "none" ? fmt.ACodec : s.ACodec;
-                if (akeyA == "copy" && (AudioChain(s, userA) != null || s.SampleRate > 0 || s.Channels > 0))
-                { error = "Audio filters, volume or sample-rate changes cannot be used with \"Stream copy\"."; return null; }
-                if (akeyA != "copy") af = AudioChain(s, userA);
+                if (s.ChLayout == "copy") akeyA = "copy";
+                if (akeyA == "copy" && (s.VolumePct != 100 || s.Normalize || userA.Length > 0 || s.SampleRate > 0))
+                { error = "Audio filters, volume, normalization or sample-rate changes cannot be used with stream copy / Atmos-DTS:X passthrough."; return null; }
+                if (akeyA != "copy")
+                {
+                    string lerr = ChannelLayouts.Check(s.ChLayout, akeyA);
+                    if (lerr != null && (s.ACodec == "auto" || s.ACodec == "none")) { string alt = ChannelLayouts.AutoCodec(fmt.Ext); if (alt != null) { akeyA = alt; lerr = null; } }
+                    if (lerr != null) { error = lerr; return null; }
+                    af = AudioChain(s, userA);
+                }
                 post.Add(AudioFormatArgs(s, akeyA != "copy"));
                 post.Add(AudioArgs(akeyA, s.AKbps));
+                if (akeyA != "copy") post.Add(ChannelLayouts.ExtraArgs(s.ChLayout, akeyA));
                 if (akeyA != "copy") post.Add(FormatRules.Audio(Tail(MapCodec(akeyA, false)), fmt.Muxer));
                 post.Add("-map_metadata 0");
                 if (fmt.Dynamic && fmt.Muxer != null) post.Add("-f " + fmt.Muxer);
@@ -269,6 +347,14 @@ namespace FFmpegForge
                     }
                     AddRotate(chain, s.Rotate);
                     if (userV.Length > 0) chain.Add(userV);
+                    if (s.ScaleEnabled)
+                    {
+                        bool ivk; string serr;
+                        string sc = Scaling.Filter(s, job, true, out ivk, out serr);
+                        if (serr != null) { error = serr; return null; }
+                        if (sc != null) chain.Add(sc);
+                        if (ivk) pre.Insert(0, Scaling.VulkanArgs.Trim());
+                    }
                     string ik = fmt.VCodec;
                     if (ik == "ico")
                     {
@@ -344,7 +430,7 @@ namespace FFmpegForge
         static string Tail(string key) { return key != null && key.Contains(":") ? key.Substring(key.IndexOf(':') + 1) : key; }
 
         /// Codecs whose chroma subsampling needs even dimensions.
-        static bool NeedsEven(string k)
+        public static bool NeedsEven(string k)
         {
             if (k == null) return false;
             k = MapCodec(k, true);
@@ -396,7 +482,7 @@ namespace FFmpegForge
             return key;
         }
 
-        static void AddRotate(List<string> vf, int r)
+        public static void AddRotate(List<string> vf, int r)
         {
             switch (r)
             {
@@ -410,22 +496,23 @@ namespace FFmpegForge
 
         static int Clamp(int v, int a, int b) { return v < a ? a : (v > b ? b : v); }
 
-        static string AudioChain(ConvSettings s, string userA)
+        public static string AudioChain(ConvSettings s, string userA)
         {
             var af = new List<string>();
+            string lay = ChannelLayouts.Upmix(s.ChLayout, s.UpmixStyle, s.SourceChannels, s.SourceIsVideo) ?? ChannelLayouts.Filter(s.ChLayout);
+            if (lay != null) af.Add(lay);
             if (s.VolumePct != 100) af.Add("volume=" + Formats.Inv(s.VolumePct / 100.0));
             if (userA.Length > 0) af.Add(userA);
             if (s.Normalize) af.Add("loudnorm=I=-16:TP=-1.5:LRA=11");
             return af.Count > 0 ? string.Join(",", af.ToArray()) : null;
         }
 
-        static string AudioFormatArgs(ConvSettings s, bool reencode)
+        public static string AudioFormatArgs(ConvSettings s, bool reencode)
         {
             if (!reencode) return "";
             var parts = new List<string>();
             if (s.SampleRate > 0) parts.Add("-ar " + s.SampleRate);
             else if (s.Normalize) parts.Add("-ar 48000"); // loudnorm outputs 192 kHz otherwise
-            if (s.Channels > 0) parts.Add("-ac " + s.Channels);
             return string.Join(" ", parts.ToArray());
         }
 
@@ -647,13 +734,13 @@ namespace FFmpegForge
             if (string.IsNullOrEmpty(FFprobe)) { job.Probed = false; job.HasAudio = job.Kind != MediaKind.Image; job.HasVideo = job.Kind != MediaKind.Audio; return; }
             try
             {
-                string o = RunCapture(FFprobe, "-v error -show_entries format=duration:stream=codec_type,codec_name,width,height:stream_disposition=attached_pic -of default=nw=1 \"" + job.Path + "\"", 20000);
-                string codec = null, curCodec = null, curType = null; int w = 0, h = 0, cw = 0, ch = 0; bool attached = false;
+                string o = RunCapture(FFprobe, "-v error -show_entries format=duration:stream=codec_type,codec_name,width,height,r_frame_rate,channels:stream_disposition=attached_pic -of default=nw=1 \"" + job.Path + "\"", 20000);
+                string codec = null, curCodec = null, curType = null, cfr = null; int cchan = 0; int w = 0, h = 0, cw = 0, ch = 0; bool attached = false;
                 Action flush = () =>
                 {
-                    if (curType == "video" && !attached) { job.HasVideo = true; if (codec == null) { codec = curCodec; w = cw; h = ch; } }
-                    if (curType == "audio") { job.HasAudio = true; if (codec == null && !job.HasVideo) codec = curCodec; }
-                    curType = null; curCodec = null; cw = ch = 0; attached = false;
+                    if (curType == "video" && !attached) { job.HasVideo = true; if (codec == null) { codec = curCodec; w = cw; h = ch; job.Width = cw; job.Height = ch; if (cfr != null) { var fr = cfr.Split('/'); int fn, fd; if (fr.Length == 2 && int.TryParse(fr[0], out fn) && int.TryParse(fr[1], out fd) && fn > 0 && fd > 0) { job.FpsNum = fn; job.FpsDen = fd; } } } }
+                    if (curType == "audio") { if (!job.HasAudio) job.AudioChannels = cchan; job.HasAudio = true; if (codec == null && !job.HasVideo) codec = curCodec; }
+                    curType = null; curCodec = null; cw = ch = 0; attached = false; cfr = null; cchan = 0;
                 };
                 foreach (var raw in o.Split('\n'))
                 {
@@ -667,6 +754,8 @@ namespace FFmpegForge
                         case "codec_type": curType = v; break;
                         case "width": int.TryParse(v, out cw); break;
                         case "height": int.TryParse(v, out ch); break;
+                        case "r_frame_rate": cfr = v; break;
+                        case "channels": int.TryParse(v, out cchan); break;
                         case "DISPOSITION:attached_pic": attached = v == "1"; break;
                         case "duration":
                             double d;
@@ -692,8 +781,15 @@ namespace FFmpegForge
         /// Runs FFmpeg; returns the exit code.
         public static int Run(string args, double expected, Action<double> onProgress, Action<string> onLog, Func<bool> cancelled, out string lastErrors)
         {
+            return Run(FFmpeg, args, expected, onProgress, onLog, cancelled, out lastErrors);
+        }
+
+        static readonly System.Text.RegularExpressions.Regex TimeRx = new System.Text.RegularExpressions.Regex(@"time=\s*(\d+):(\d+):(\d+(?:\.\d+)?)");
+
+        public static int Run(string exe, string args, double expected, Action<double> onProgress, Action<string> onLog, Func<bool> cancelled, out string lastErrors)
+        {
             var errs = new List<string>();
-            var psi = new ProcessStartInfo(FFmpeg, args)
+            var psi = new ProcessStartInfo(exe, args)
             {
                 UseShellExecute = false, CreateNoWindow = true,
                 RedirectStandardOutput = true, RedirectStandardError = true,
@@ -715,6 +811,17 @@ namespace FFmpegForge
                 p.ErrorDataReceived += (s, e) =>
                 {
                     if (string.IsNullOrWhiteSpace(e.Data)) return;
+                    if (expected > 0)
+                    {
+                        // fallback progress for tools printing FFmpeg-style "time=hh:mm:ss.xx"
+                        var tm = TimeRx.Match(e.Data);
+                        if (tm.Success)
+                        {
+                            double t = int.Parse(tm.Groups[1].Value) * 3600 + int.Parse(tm.Groups[2].Value) * 60 + double.Parse(tm.Groups[3].Value, CultureInfo.InvariantCulture);
+                            onProgress(Math.Min(1.0, t / expected));
+                            return;
+                        }
+                    }
                     lock (errs) { errs.Add(e.Data); if (errs.Count > 30) errs.RemoveAt(0); }
                     onLog(e.Data);
                 };
@@ -812,6 +919,216 @@ namespace FFmpegForge
                 case "xbm": case "pbm": case "wbmp": return null;
             }
             return null;
+        }
+    }
+}
+
+namespace FFmpegForge
+{
+    /// Channel layouts, including immersive Dolby Atmos / DTS:X bed layouts (5.1.2 … 9.1.6, 22.2).
+    /// FFmpeg cannot encode Atmos objects or DTS:X metadata: immersive layouts are written as
+    /// discrete channel beds (PCM, Opus, FLAC ≤ 8 ch…); "copy" passes an existing Atmos / DTS:X
+    /// track through untouched.
+    public static class ChannelLayouts
+    {
+        public class Layout
+        {
+            public string Key, Label, Std, Custom; public int Count;
+            public Layout(string key, string label, string std, string custom, int count) { Key = key; Label = label; Std = std; Custom = custom; Count = count; }
+        }
+
+        const string Base714 = "FL=FL|FR=FR|FC=FC|LFE=LFE|BL=BL|BR=BR|SL=SL|SR=SR|TFL=TFL|TFR=TFR|TBL=TBL|TBR=TBR";
+
+        public static readonly List<Layout> All = new List<Layout> {
+            new Layout("",       "Original", null, null, 0),
+            new Layout("copy",   "Passthrough: keep Dolby Atmos / DTS:X track untouched (copy)", null, null, 0),
+            new Layout("mono",   "Mono (1.0)", "mono", null, 1),
+            new Layout("stereo", "Stereo (2.0)", "stereo", null, 2),
+            new Layout("2.1",    "2.1", "2.1", null, 3),
+            new Layout("quad",   "Quad (4.0)", "quad", null, 4),
+            new Layout("5.0",    "5.0", "5.0", null, 5),
+            new Layout("5.1",    "5.1 Surround", "5.1", null, 6),
+            new Layout("6.1",    "6.1 Surround", "6.1", null, 7),
+            new Layout("7.1",    "7.1 Surround", "7.1", null, 8),
+            new Layout("5.1.2",  "5.1.2 (Dolby Atmos / DTS:X bed)", "5.1.2", null, 8),
+            new Layout("5.1.4",  "5.1.4 (Dolby Atmos / DTS:X bed)", "5.1.4", null, 10),
+            new Layout("7.1.2",  "7.1.2 (Dolby Atmos / DTS:X bed)", "7.1.2", null, 10),
+            new Layout("7.1.4",  "7.1.4 (Dolby Atmos / DTS:X bed)", "7.1.4", null, 12),
+            new Layout("7.1.6",  "7.1.6 (Dolby Atmos bed)", null,
+                "pan=FL+FR+FC+LFE+BL+BR+SL+SR+TFL+TFR+TSL+TSR+TBL+TBR|" + Base714, 14),
+            new Layout("9.1.4",  "9.1.4 (Dolby Atmos / DTS:X Pro bed)", null,
+                "pan=FL+FR+FC+LFE+BL+BR+SL+SR+WL+WR+TFL+TFR+TBL+TBR|" + Base714, 14),
+            new Layout("9.1.6",  "9.1.6 (Dolby Atmos bed)", null,
+                "pan=FL+FR+FC+LFE+BL+BR+SL+SR+WL+WR+TFL+TFR+TSL+TSR+TBL+TBR|" + Base714, 16),
+            new Layout("22.2",   "22.2 (NHK Super Hi-Vision)", "22.2", null, 24),
+        };
+
+        public static Layout Get(string key) { return All.FirstOrDefault(l => l.Key == (key ?? "")); }
+
+        public static string Filter(string key)
+        {
+            var l = Get(key);
+            if (l == null || l.Count == 0) return null;
+            if (l.Std != null) return "aformat=channel_layouts=" + l.Std;
+            return "aformat=channel_layouts=7.1.4," + l.Custom;     // build the 7.1.4 bed, then add wides / top-sides
+        }
+
+
+        // ---------------------------------------------------------------------
+        //  Immersive upmix: builds a real multichannel mix instead of silent channels.
+        //  Stereo sources: spectral surround upmix (FFmpeg "surround"): centered
+        //  content (lead vocal / dialogue) is steered to the center speaker,
+        //  panned instruments keep their position across FL/FR/sides, bass goes to
+        //  the LFE. The mid/side "side" signal (stereo width, reverb, room,
+        //  cymbals) feeds the wides and the height layer, so the voice never
+        //  goes up. Multichannel sources keep their bed; heights come from the
+        //  surround ambience.
+        // ---------------------------------------------------------------------
+        class Style { public double Fc, Focus, Side, Back, Wide, HFront, HSide, HBack, HPass, Smooth; public int Delay; public bool Room; }
+
+        static Style GetStyle(int style, bool video)
+        {
+            if (style == 0) style = video ? 2 : 1;
+            switch (style)
+            {
+                case 2: // Cinema: dialogue locked to the center, ambience overhead
+                    return new Style { Fc = 1.35, Focus = 0.45, Side = 0.85, Back = 0.8, Wide = 0.5, HFront = 0.8, HSide = 0.7, HBack = 0.7, HPass = 1500, Smooth = 0.4, Delay = 12, Room = false };
+                case 3: // Live concert: big room, audience all around
+                    return new Style { Fc = 1.0, Focus = 0.0, Side = 1.0, Back = 1.0, Wide = 0.7, HFront = 1.0, HSide = 0.9, HBack = 0.9, HPass = 900, Smooth = 0.2, Delay = 18, Room = true };
+                default: // Music: vocals forward, instruments spread, air & cymbals above
+                    return new Style { Fc = 1.2, Focus = 0.25, Side = 0.8, Back = 0.7, Wide = 0.6, HFront = 0.9, HSide = 0.75, HBack = 0.75, HPass = 1800, Smooth = 0.3, Delay = 10, Room = false };
+            }
+        }
+
+        static string F(double d) { return Formats.Inv(d); }
+
+        /// Returns an -af graph that upmixes to the target layout, or null (no upmix needed / Off).
+        public static string Upmix(string key, int style, int srcCh, bool video)
+        {
+            if (style == 4) return null;
+            var l = Get(key);
+            if (l == null || !new[] { "5.1", "7.1", "5.1.2", "5.1.4", "7.1.2", "7.1.4", "7.1.6", "9.1.4", "9.1.6" }.Contains(l.Key)) return null;
+            if (srcCh > 0 && srcCh >= l.Count) return null;          // already enough channels: plain conversion
+            bool bed71 = l.Key.StartsWith("7.1") || l.Key.StartsWith("9.1");
+            bool wides = l.Key.StartsWith("9.1");
+            int heights = l.Key.EndsWith(".2") ? 2 : l.Key.EndsWith(".4") ? 4 : l.Key.EndsWith(".6") ? 6 : 0;
+            var st = GetStyle(style, video);
+            bool multi = srcCh >= 6;
+            var g = new StringBuilder();
+
+            // 1) 7.1 steered bed. Stereo: spectral upmix, then remove the centered sound (voice) that
+            //    leaks into FL/FR so it really sits in the center speaker, closer to the listener.
+            if (!multi)
+            {
+                double cancel = style == 3 ? 0.6 : 0.95;
+                g.Append("aformat=channel_layouts=stereo,surround=chl_out=7.1:smooth=" + F(st.Smooth) + ":lfe_low=80:lfe_high=160,");
+                g.Append("pan=7.1|c0=c0-" + F(cancel) + "*c2|c1=c1-" + F(cancel) + "*c2|c2=" + F(st.Fc) + "*c2|c3=c3|c4=" + F(st.Back) + "*c4|c5=" + F(st.Back) + "*c5|c6=" + F(st.Side) + "*c6|c7=" + F(st.Side) + "*c7");
+            }
+            else g.Append("aformat=channel_layouts=7.1");
+
+            string bed = bed71 ? "7.1" : "5.1";
+            string[] bedCh = bed71 ? new[] { "FL", "FR", "FC", "LFE", "BL", "BR", "SL", "SR" } : new[] { "FL", "FR", "FC", "LFE", "BL", "BR" };
+            int branches = 1 + (heights > 0 ? 1 : 0) + (wides ? 1 : 0);
+            if (branches == 1) return g.Append(bed71 ? "" : ",aformat=channel_layouts=5.1").ToString();   // 5.1 / 7.1 target
+
+            g.Append(",asplit=" + branches + "[m]" + (heights > 0 ? "[h]" : "") + (wides ? "[w]" : "") + ";[m]");
+            if (!bed71) g.Append("aformat=channel_layouts=5.1,");
+            g.Append("channelsplit=channel_layout=" + bed + string.Concat(bedCh.Select(c => "[" + c + "]").ToArray()));
+            var order = new List<string>(bedCh);
+
+            // 2) wides: the instruments of FL/FR (voice already removed), keeping their side
+            if (wides)
+            {
+                g.Append(";[w]pan=stereo|c0=c0|c1=c1,highpass=f=150,lowpass=f=8000,adelay=6|6,volume=" + F(st.Wide) +
+                         ",channelsplit=channel_layout=stereo[WL][WR]");
+                order.Add("WL"); order.Add("WR");
+            }
+            // 3) height layer: the ambience the upmix steered to sides/rears (reverb, room, cymbals, air),
+            //    high-passed so voice body and bass stay on the ground
+            if (heights > 0)
+            {
+                int pairs = heights / 2;
+                g.Append(";[h]pan=stereo|c0=0.6*c6+0.4*c4|c1=0.6*c7+0.4*c5,highpass=f=" + F(st.HPass) +
+                         (pairs > 1 ? ",asplit=" + pairs + "[hf]" + (heights == 6 ? "[hs]" : "") + "[hb];[hf]" : ","));
+                g.Append("adelay=" + st.Delay + "|" + st.Delay + ",volume=" + F(st.HFront) + ",channelsplit=channel_layout=stereo[TFL][TFR]");
+                order.Add("TFL"); order.Add("TFR");
+                if (heights == 6)
+                {
+                    int d2 = st.Delay + 7;
+                    g.Append(";[hs]adelay=" + d2 + "|" + d2 + ",volume=" + F(st.HSide) + ",channelsplit=channel_layout=stereo[TSL][TSR]");
+                    order.Add("TSL"); order.Add("TSR");
+                }
+                if (heights >= 4)
+                {
+                    int d3 = st.Delay + 15;
+                    g.Append(";[hb]adelay=" + d3 + "|" + d3 + (st.Room ? ",aecho=0.8:0.75:45|70:0.35|0.25" : ",aecho=0.8:0.6:35:0.2") + ",volume=" + F(st.HBack) +
+                             ",channelsplit=channel_layout=stereo[TBL][TBR]");
+                    order.Add("TBL"); order.Add("TBR");
+                }
+            }
+            string target = l.Std != null ? StdOrder(l.Std) : l.Custom.Substring(4, l.Custom.IndexOf('|') - 4);
+            var want = target.Split('+');
+            if (want.Length != order.Count) return null;
+            g.Append(";" + string.Concat(want.Select(c => "[" + c + "]").ToArray()) + "join=inputs=" + want.Length + ":channel_layout=" + target +
+                     ",alimiter=limit=0.95:level=disabled");
+            return g.ToString();
+        }
+
+        static string StdOrder(string std)
+        {
+            switch (std)
+            {
+                case "5.1.2": return "FL+FR+FC+LFE+BL+BR+TFL+TFR";
+                case "5.1.4": return "FL+FR+FC+LFE+BL+BR+TFL+TFR+TBL+TBR";
+                case "7.1.2": return "FL+FR+FC+LFE+BL+BR+SL+SR+TFL+TFR";
+                case "7.1.4": return "FL+FR+FC+LFE+BL+BR+SL+SR+TFL+TFR+TBL+TBR";
+                default: return std;
+            }
+        }
+
+        /// Automatic codec for immersive layouts when the format's default codec cannot carry them.
+        public static string AutoCodec(string ext)
+        {
+            switch ((ext ?? "").ToLowerInvariant())
+            {
+                case "wav": case "w64": case "caf": case "mov": case "mkv": case "mka": case "nut": return "pcm24";
+                case "opus": case "ogg": case "oga": case "webm": return "opus";
+                default: return null;
+            }
+        }
+
+        static int MaxChannels(string akey)
+        {
+            switch (CommandBuilder.MapCodec(akey, false))
+            {
+                case "mp3": case "mp2": case "wmav2": return 2;
+                case "amr": return 1;
+                case "ac3": case "eac3": case "dts": return 6;
+                case "aac": case "flac": case "alac": return 8;
+                case "opus": return 255;      // mapping family 255 above 8 channels
+                default: return 0;            // PCM, Vorbis, WavPack, TTA, other encoders: no check
+            }
+        }
+
+        /// Null when OK, otherwise a readable error.
+        public static string Check(string key, string akey)
+        {
+            var l = Get(key);
+            if (l == null || l.Count == 0) return null;
+            int max = MaxChannels(akey);
+            if (max > 0 && l.Count > max)
+                return "Channel layout " + l.Key + " needs " + l.Count + " channels but this audio codec supports only " + max +
+                       ". Pick an output format that carries it: MKV or MOV for video; WAV (PCM 24-bit), W64, CAF, MKA or OPUS for audio. The codec is then chosen automatically. To keep an existing Dolby Atmos / DTS:X track, choose \"Passthrough\".";
+            return null;
+        }
+
+        public static string ExtraArgs(string key, string akey)
+        {
+            var l = Get(key);
+            // Opus only has a standard mapping for mono/stereo/quad/5.0/5.1/6.1/7.1 — anything else uses mapping family 255
+            if (l != null && l.Count > 0 && CommandBuilder.MapCodec(akey, false) == "opus" &&
+                !new[] { "mono", "stereo", "quad", "5.0", "5.1", "6.1", "7.1" }.Contains(l.Key)) return "-mapping_family 255";
+            return "";
         }
     }
 }

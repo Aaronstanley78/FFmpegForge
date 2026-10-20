@@ -83,7 +83,8 @@ namespace FFmpegForge
         static readonly Dictionary<string, FilterHelp> cache = new Dictionary<string, FilterHelp>();
         static readonly object sync = new object();
 
-        static readonly Regex ListRx = new Regex(@"^\s*([T.])([S.])([C.])\s+(\S+)\s+(\S+)->(\S+)\s+(.*)$");
+        // " T.C name  V->V  desc" (FFmpeg <= 8) and " TS name  V->V  desc" (FFmpeg 9+: no command flag)
+        static readonly Regex ListRx = new Regex(@"^\s*([A-Z.]{2,4})\s+(\S+)\s+(\S+)->(\S+)\s+(.*)$");
         static readonly Regex OptRx = new Regex(@"^\s{1,3}(\S+)\s+<([^>]+)>\s+([A-Z.]{9,12})\s?(.*)$");
         static readonly Regex ConstRx = new Regex(@"^\s{4,}(\S+)(?:\s+(\S+))?\s+([A-Z.]{9,12})\s?(.*)$");
         static readonly Regex IoRx = new Regex(@"^\s*#\d+:\s*(.+)$");
@@ -111,22 +112,47 @@ namespace FFmpegForge
         {
             try
             {
-                var list = new List<FilterInfo>();
-                foreach (var raw in Run("-hide_banner -filters").Split('\n'))
-                {
-                    var m = ListRx.Match(raw.TrimEnd('\r'));
-                    if (!m.Success) continue;
-                    list.Add(new FilterInfo
-                    {
-                        Timeline = m.Groups[1].Value == "T", Slice = m.Groups[2].Value == "S", Command = m.Groups[3].Value == "C",
-                        Name = m.Groups[4].Value, In = m.Groups[5].Value, Out = m.Groups[6].Value, Desc = m.Groups[7].Value.Trim()
-                    });
-                }
+                var list = ParseList(Run("-hide_banner -filters"));
                 All = list.OrderBy(f => f.Name, StringComparer.OrdinalIgnoreCase).ToList();
                 Loaded = true;
                 LoadError = All.Count == 0 ? "No filter found in ffmpeg -filters output." : null;
             }
             catch (Exception ex) { LoadError = ex.Message; Loaded = true; }
+        }
+
+        public static List<FilterInfo> ParseList(string text)
+        {
+            var list = new List<FilterInfo>();
+            foreach (var raw in text.Split('\n'))
+            {
+                var m = ListRx.Match(raw.TrimEnd('\r'));
+                if (!m.Success) continue;
+                string fl = m.Groups[1].Value;
+                if (fl.Replace(".", "").Trim('T', 'S', 'C').Length > 0) continue;   // not a flag column
+                list.Add(new FilterInfo
+                {
+                    Timeline = fl.Length > 0 && fl[0] == 'T', Slice = fl.Contains("S"), Command = fl.Contains("C"),
+                    Name = m.Groups[2].Value, In = m.Groups[3].Value, Out = m.Groups[4].Value, Desc = m.Groups[5].Value.Trim()
+                });
+            }
+            return list;
+        }
+
+        static readonly Dictionary<string, bool> probed = new Dictionary<string, bool>();
+
+        /// True when this FFmpeg has the filter (catalog first, then a direct "-h filter=" probe).
+        public static bool Has(string name)
+        {
+            if (Find(name) != null) return true;
+            if (string.IsNullOrEmpty(Runner.FFmpeg)) return false;
+            lock (probed)
+            {
+                bool r;
+                if (probed.TryGetValue(name, out r)) return r;
+                try { r = Run("-hide_banner -h filter=" + name).Contains("Filter " + name); } catch { r = false; }
+                probed[name] = r;
+                return r;
+            }
         }
 
         public static FilterInfo Find(string name)
