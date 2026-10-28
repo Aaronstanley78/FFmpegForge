@@ -1,0 +1,14 @@
+FFmpeg Forge 1.1.3a - edition normale (sans FFmpeg)
+====================================================
+
+1. Extrayez tout le dossier (par exemple dans C:\FFmpeg).
+2. Installez FFmpeg si ce n'est pas deja fait (ffmpeg.exe + ffprobe.exe),
+   par exemple dans C:\FFmpeg\bin. FFmpeg Forge le detecte automatiquement,
+   sinon cliquez sur "FFmpeg location..." et choisissez ffmpeg.exe.
+3. Lancez FFmpegForge.exe. Les reglages sont enregistres dans %APPDATA%\FFmpegForge.
+
+SeedVR2 : dans la section SEEDVR2, cliquez une fois sur "Install SeedVR2..."
+(environ 4 Go, installe dans %LOCALAPPDATA%\FFmpegForge\SeedVR2). Le modele
+choisi se telecharge a la premiere conversion. Carte NVIDIA (CUDA) requise.
+
+Le code source est dans FFmpegForge\ (build.bat pour recompiler).
