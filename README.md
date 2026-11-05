@@ -5,8 +5,11 @@
 <h1 align="center">FFmpeg Forge 2.0</h1>
 
 <p align="center">
-  <b>Convert anything into everything.</b><br>
-  A fast, premium Windows converter for video, audio and images, powered by FFmpeg, with built-in AI.
+  <b>Information</b><br>
+  I developed FFmpegForge to make advanced video processing easier and more accessible.
+  It combines FFmpeg conversion, hardware acceleration, AI upscaling, denoising, and advanced video processing features in one application.
+  It's free and open source.
+  I'd love to hear feedback from people who actually try it, especially regarding performance, stability, and features.
 </p>
 
 <p align="center">
