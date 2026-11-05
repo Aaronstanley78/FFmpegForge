@@ -29,30 +29,30 @@
 
 ---
 
-## 🆕 What's new in 2.0
+## What's new in 2.0
 
 | | |
 |---|---|
-| 🎨 **Brand-new design** | Royal blue & gold premium dark theme: gold logo, rounded cards, gradient buttons, blue → gold progress bar. Same familiar layout as 1.1.5: files in the middle, every setting in one column on the right |
-| 🧠 **Python / ONNX AI** | Import **your own AI models** — ONNX, PyTorch (`.pth` `.pt` `.ckpt` `.safetensors`) or a Python script — and run them on every frame of your videos and images |
-| 🖼️ **Image sequence export** | Export a video as numbered **PNG** (lossless, 16-bit when the render is 10-bit) or **JPG** pictures: just tick **PNG** or **JPG** in **PNG/JPG SEQUENCE**, with every video option and AI effect applied |
-| 🧹 **Denoiser IA models** | Choose the AI: **SCUNet** (built in), **Nomos8k HAT-L**, **NomosUni DAT** or **PurePhoto SPAN** |
-| 🔭 **Faster VisionNext** | Several frames per GPU pass, CPU pre-processing in parallel, colour fix on the GPU — same pixels as before. Upscale factor **×1 / ×2 / ×3 / ×4 / ×8** |
-| 🚀 **Faster Denoiser IA** | CUDA Graph replay of the whole network and fused window attention |
-| 🛡️ **Safer preview** | The live before / after preview can never make an export fail |
+|  **Brand-new design** | Royal blue & gold premium dark theme: gold logo, rounded cards, gradient buttons, blue → gold progress bar. Same familiar layout as 1.1.5: files in the middle, every setting in one column on the right |
+|  **Python / ONNX AI** | Import **your own AI models** — ONNX, PyTorch (`.pth` `.pt` `.ckpt` `.safetensors`) or a Python script — and run them on every frame of your videos and images |
+|  **Image sequence export** | Export a video as numbered **PNG** (lossless, 16-bit when the render is 10-bit) or **JPG** pictures: just tick **PNG** or **JPG** in **PNG/JPG SEQUENCE**, with every video option and AI effect applied |
+|  **Denoiser IA models** | Choose the AI: **SCUNet** (built in), **Nomos8k HAT-L**, **NomosUni DAT** or **PurePhoto SPAN** |
+|  **Faster VisionNext** | Several frames per GPU pass, CPU pre-processing in parallel, colour fix on the GPU — same pixels as before. Upscale factor **×1 / ×2 / ×3 / ×4 / ×8** |
+|  **Faster Denoiser IA** | CUDA Graph replay of the whole network and fused window attention |
+|  **Safer preview** | The live before / after preview can never make an export fail |
 
 ---
 
-## ✨ Features
+## Features
 
-### 🏠 Drop, choose, convert
+### Drop, choose, convert
 <p align="center"><img src="docs/screenshot-home.png" alt="Home screen" width="920"></p>
 
 - Drag & drop files or **whole folders**, or click the drop zone to browse. Batch conversion shows per-file and overall progress.
 - The **right column** holds every setting, section by section: Output format, Video, Scale, SeedVR2, Upscale VisionNext, Denoiser IA, Python / ONNX AI, OptiScaler, NVIDIA RTX AI, Audio, Image, Filters, Trim and Destination.
 - The **footer** is always visible: status, blue → gold progress bar, **Open folder**, **Cancel** and **CONVERT TO …** (or **EXPORT PNG / JPG SEQUENCE**).
 
-### 🎞️ Every format your FFmpeg supports
+### Every format your FFmpeg supports
 <p align="center"><img src="docs/screenshot-format.png" alt="Output format" width="460"></p>
 
 - **Video, audio and image output.** Tuned presets come first, then **every muxer and still-image type found in your `ffmpeg.exe`**, read live from FFmpeg.
@@ -61,7 +61,7 @@
 - **GPU encoders:** NVIDIA NVENC (H.264, H.265, AV1), Intel QuickSync and AMD AMF.
 - **Formats with strict rules are fixed automatically** (frame size, frame rate, sample rate, channels): DV, GXF, MXF D-10, H.261, AMV, GSM, AMR, DTS and more.
 
-### 🎬 Video settings, CRF NVENC and image sequences
+### Video settings, CRF NVENC and image sequences
 <p align="center"><img src="docs/screenshot-video.png" alt="Video settings" width="460"></p>
 
 - Codec, quality, bitrate, encoding speed, **resolution without limits** (8K, DCI 4K, 4K, 1080p, vertical 9:16, square, 4:5, cinema 2.39:1 or any width × height), aspect handling (Stretch / Fit / Fill), frame rate and rotation.
@@ -70,14 +70,14 @@
   - It works with **every video option**: resolution, frame rate, trim, filters, Denoiser IA, Python / ONNX AI, Scale, OptiScaler, NVIDIA RTX, SeedVR2 and Upscale VisionNext.
   - FFmpeg Forge renders a lossless 4:4:4 FFV1 file first, then writes the pictures: **PNG** is lossless (16-bit when the render is 10-bit), **JPG** uses quality 2 with full 4:4:4 colour.
 
-### 👁️ Live before / after preview
+### Live before / after preview
 <p align="center"><img src="docs/screenshot-preview.png" alt="Before / after preview" width="820"></p>
 
 - While a **video** exports, a window shows the **original** and the **final** frame (Scale, FSR, OptiScaler, Denoiser, filters, RTX, SeedVR2, VisionNext…).
 - **Slider** mode (drag the line, or ← →) or **side by side** (Space). It closes by itself when the export is finished.
 - It updates about once per second of video from the same FFmpeg command, so the export is barely slower — and if a preview picture cannot be written, only the preview stops: **the export always goes on**.
 
-### 🧹 Denoiser IA: AI noise and grain removal
+### Denoiser IA: AI noise and grain removal
 <p align="center"><img src="docs/screenshot-denoiser.png" alt="Denoiser IA" width="460"></p>
 <p align="center"><img src="docs/denoiser-before-after.png" alt="Noisy picture (left) and Denoiser IA result (right)" width="820"></p>
 
@@ -94,7 +94,7 @@
 - **Fast:** CUDA Graph replay of the whole SCUNet network (one call per batch instead of ~8,500 small GPU launches), fused window attention, fp16 / bf16, up to 8 frames per pass, decoding / AI / encoding in parallel, lossless UT Video intermediate. Out-of-memory errors shrink the work size automatically.
 - **First use:** FFmpeg Forge installs the AI (Python 3.12, PyTorch CUDA ≈ 3 GB, SCUNet 72 MB, model loader) in a console window. Until then, the classic FFmpeg denoiser is used. The HAT-L / DAT / SPAN files go in `models\` next to `FFmpegForge.exe` (see the *Denoiser-Models* archive).
 
-### 🧠 Python / ONNX AI: run your own models
+### Python / ONNX AI: run your own models
 <p align="center"><img src="docs/screenshot-python-onnx.png" alt="Python / ONNX AI" width="460"></p>
 
 - Tick **Use my AI model**, click **Import model…** and pick a file — it is copied into FFmpeg Forge's `models\custom` library and runs on every frame of your **videos and images**.
@@ -106,7 +106,7 @@
 - It runs **before** Scale, RTX, SeedVR2 and VisionNext, and keeps your format, codec, audio, trim and filters.
 - **Install AI runtime…** installs PyTorch CUDA, ONNX Runtime GPU and spandrel once.
 
-### 🔭 Upscale VisionNext: AI upscaling (videos & images)
+### Upscale VisionNext: AI upscaling (videos & images)
 <p align="center"><img src="docs/screenshot-visionnext.png" alt="Upscale VisionNext" width="460"></p>
 
 - VisionNext's model is **[VOSR 2.0](https://github.com/cswry/VOSR)** (one-step 1.4B generative super-resolution, CVPR 2026, Apache-2.0).
@@ -117,7 +117,7 @@
 - **Speed:** bf16 + flash attention, all the tiles of a frame in one pass, **2 frames per pass** on 20 GB+ GPUs, CPU pre-resize in parallel and the colour fix on the GPU — with the same pixels as the official inference. Same noise on every frame: no flicker. No Triton / `torch.compile` needed on Windows.
 - An NVIDIA GPU with 24 GB of VRAM is recommended. H.264 NVENC is limited to 4096 px and H.265 NVENC to 8192 px: choose libx264 / libx265 beyond.
 
-### 🌱 SeedVR2: AI restoration and upscaling
+### SeedVR2: AI restoration and upscaling
 <p align="center"><img src="docs/screenshot-seedvr2.png" alt="SeedVR2" width="460"></p>
 
 - **[SeedVR2](https://github.com/ByteDance-Seed/SeedVR)** (ByteDance-Seed, Apache-2.0): one-step diffusion restoration with temporal consistency on videos.
@@ -132,45 +132,45 @@
 
 - Output size, batch size, colour correction, input / latent noise, seed, chunking with temporal overlap, BlockSwap, VAE tiling, RAM offload, attention backend and torch.compile. **Install SeedVR2…** sets everything up in one click.
 
-### 🔎 Scale: game-style upscalers for video
+### Scale: game-style upscalers for video
 <p align="center"><img src="docs/screenshot-scale.png" alt="Scale" width="460"></p>
 
 - **AMD FSR 1** (EASU + RCAS), **NVIDIA Image Scaling**, **Snapdragon GSR**, temporal **FSR 2 / FSR 3** (+ frame generation ×2, experimental), **Anime4K**, pixel-art scalers (**xBR**, **hqx**, Integer, Nearest, Sharp bilinear) and **BCAS**, **EWA Lanczos Sharp**, Lanczos, Bicubic, Spline.
 - GPU processing through FFmpeg's libplacebo / Vulkan, **screen-quality encode** (10-bit, finer CRF) and **full chroma 4:4:4** by default.
 
-### ✨ OptiScaler: supersampled upscaling
+### OptiScaler: supersampled upscaling
 <p align="center"><img src="docs/screenshot-optiscaler.png" alt="OptiScaler" width="460"></p>
 
 - Like OptiScaler's **Output Scaling**: render at output × 1.25–3, sharpen with **RCAS**, then downscale (Bicubic, Catmull-Rom, Lanczos 2 / 3, Kaiser 2 / 3, Magic Kernel) for finer edges and less aliasing. GLSL port of [OptiScaler](https://github.com/optiscaler/OptiScaler)'s shaders (GPL-3.0).
 
-### 🟩 NVIDIA RTX AI
+### NVIDIA RTX AI
 <p align="center"><img src="docs/screenshot-rtx.png" alt="NVIDIA RTX AI" width="460"></p>
 
 - **RTX Video Super Resolution** (quality 1–4, ×2 / ×3 / ×4), **RTX TrueHDR** (SDR → HDR10) and **DLSS Super Resolution** modes.
 - Engines: the NVIDIA driver (built-in `ForgeRTX.exe`, like Chrome / VLC / mpv), an FFmpeg build with NVIDIA's RTX filters, or [RTXVideoProcessor](https://github.com/DrC0ns0le/RTXVideoProcessor).
 
-### 🔊 Audio: Dolby Atmos / DTS:X layouts, Spatial Audio and DSD
+### Audio: Dolby Atmos / DTS:X layouts, Spatial Audio and DSD
 <p align="center"><img src="docs/screenshot-audio-dsd.png" alt="Audio settings and DSD export" width="460"></p>
 
 - **Channel layouts** from mono to 7.1, the Dolby Atmos / DTS:X beds 5.1.2, 5.1.4, 7.1.2, **7.1.4**, 7.1.6, 9.1.4, **9.1.6** and 22.2 — up to 24 discrete channels.
 - **Immersive upmix** (Auto, **Spatial Music**, Music, Cinema, Live concert): vocals to the center, instruments across the front and sides, bass to the LFE, reverb and air to the wides and heights.
-- **🎧 Spatial Audio for headphones:** the 7.1.4 mix rendered in 3D with measured HRTFs, written as a normal stereo file.
+- **Spatial Audio for headphones:** the 7.1.4 mix rendered in 3D with measured HRTFs, written as a normal stereo file.
 - **Atmos / DTS:X passthrough** (TrueHD Atmos, E-AC-3 JOC, DTS:X) bit-for-bit.
-- **💿 DSD:** export **.dsf** (Sony) and **.dff** (Philips DSDIFF) in **DSD64 / DSD128**, in every layout, with FFmpeg Forge's own 7th-order delta-sigma modulator (THD+N ≈ −113 dB DSD64, −124 dB DSD128). DSF goes up to 5.1; bigger layouts are written as .dff automatically. DSD sources convert to any format and layout.
+- **DSD:** export **.dsf** (Sony) and **.dff** (Philips DSDIFF) in **DSD64 / DSD128**, in every layout, with FFmpeg Forge's own 7th-order delta-sigma modulator (THD+N ≈ −113 dB DSD64, −124 dB DSD128). DSF goes up to 5.1; bigger layouts are written as .dff automatically. DSD sources convert to any format and layout.
 
-### 🖼️ Image output
+### Image output
 <p align="center"><img src="docs/screenshot-image.png" alt="Image settings" width="460"></p>
 
 - Resolution, aspect, quality and rotation for pictures; **video → image** as a single frame, every frame, or one every N seconds.
 
-### 🎛️ Every FFmpeg filter, with a visual editor
+### Every FFmpeg filter, with a visual editor
 <p align="center"><img src="docs/screenshot-filter-library.png" alt="Filter library" width="820"></p>
 <p align="center"><img src="docs/screenshot-filters.png" alt="Filter chain" width="460"></p>
 
 - The **filter library** lists every filter of your build (500+), searchable and sorted by category, with an **automatically generated parameter editor** (defaults, ranges, drop-downs, colour and file pickers, help on hover) and **timeline** support.
 - **45+ one-click presets** (black & white, cinematic, sharpen, denoise, deinterlace, stabilize, crops, speed, watermark, bass boost, karaoke, 8D audio, pitch…), **filter chains** you can reorder, and an advanced `-filter_complex` box with extra inputs.
 
-### ⚡ Trim, destination and workflow
+### Trim, destination and workflow
 <p align="center"><img src="docs/screenshot-trim-destination.png" alt="Trim and destination" width="460"></p>
 
 - **Trim** (start / end), output folder or next to the source, overwrite option and **extra FFmpeg arguments**.
@@ -179,9 +179,9 @@
 
 ---
 
-## 📦 Installation
+## Installation
 
-### 🎒 Portable edition (recommended)
+### Portable edition (recommended)
 1. Download **`FFmpegForge-2.0.0-Portable.rar`** from the [Releases](../../releases) page.
 2. Extract it anywhere (USB stick, `D:\Tools\`, another PC).
 3. Double-click **`FFmpegForge.exe`**.
@@ -201,7 +201,7 @@ FFmpegForge-2.0.0-Portable\
 └─ portable.txt           portable mode switch (delete it to use %APPDATA%)
 ```
 
-### 🪶 Light edition (your own FFmpeg)
+### Light edition (your own FFmpeg)
 1. Put `ffmpeg.exe` and `ffprobe.exe` (a *full* build from [gyan.dev](https://www.gyan.dev/ffmpeg/builds/) or [BtbN](https://github.com/BtbN/FFmpeg-Builds/releases)) in **`C:\FFmpeg\bin\`**.
 2. Extract **`FFmpegForge-2.0.0.rar`** into `C:\FFmpeg\` and run **`FFmpegForge.exe`**.
 
@@ -213,7 +213,7 @@ FFmpegForge-2.0.0-Portable\
 
 ---
 
-## 🛠️ Build from source
+## Build from source
 
 No Visual Studio needed: `build.bat` compiles `src\*.cs` with the C# compiler included in Windows and embeds the shaders, the HRTF data and the Python helpers.
 
@@ -237,7 +237,7 @@ No Visual Studio needed: `build.bat` compiles `src\*.cs` with the C# compiler in
 
 ---
 
-## 🙏 Credits
+## Credits
 
 - **[FFmpeg](https://ffmpeg.org)** does the work behind the scenes. The portable edition ships the **unmodified FFmpeg 9.0.2 *full* build by [gyan.dev](https://www.gyan.dev/ffmpeg/builds/)** (GPL v3); licence and build information are in `FFmpeg\`.
 - **Shaders and data:** AMD FidelityFX FSR (MIT), NVIDIA Image Scaling (MIT), Snapdragon GSR (BSD-3), Anime4K (MIT), [OptiScaler](https://github.com/optiscaler/OptiScaler) shaders (GPL-3.0), IRCAM LISTEN HRTF — details in `SHADER_LICENSES.txt`.
