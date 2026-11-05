@@ -26,7 +26,7 @@
 </p>
 
 <p align="center">
-  <a href="../../releases/latest"><b>⬇️ Download FFmpeg Forge 2.0.0</b></a> ·
+  <a href="../../releases/latest"><b>⬇️ Download FFmpeg Forge 2.1.6</b></a> ·
   Portable edition with FFmpeg 9.0.2 included, or the light edition (≈ 0.7 MB) for your own FFmpeg
 </p>
 
